@@ -4,7 +4,6 @@ using System.IO.Abstractions;
 using System.Linq;
 using DotNetOutdated.Models;
 using NuGet.Common;
-using NuGet.Packaging;
 using NuGet.Packaging.Core;
 using NuGet.ProjectModel;
 using NuGet.Protocol;
@@ -41,21 +40,13 @@ namespace DotNetOutdated.Services
                 var lockFile = LockFileUtilities.GetLockFile(lockFilePath, NullLogger.Instance);
 
                 // Create a project
-                var project = new Project
-                {
-                    Name = packageSpec.Name,
-                    Sources = packageSpec.RestoreMetadata.Sources.Select(s => s.SourceUri).ToList(),
-                    FilePath = packageSpec.FilePath
-                };
+                var project = new Project(packageSpec.Name, packageSpec.FilePath, packageSpec.RestoreMetadata.Sources.Select(s => s.SourceUri).ToList());
                 projects.Add(project);
 
                 // Get the target frameworks with their dependencies 
                 foreach (var targetFrameworkInformation in packageSpec.TargetFrameworks)
                 {
-                    var targetFramework = new TargetFramework
-                    {
-                        Name = targetFrameworkInformation.FrameworkName,
-                    };
+                    var targetFramework = new TargetFramework(targetFrameworkInformation.FrameworkName);
                     project.TargetFrameworks.Add(targetFramework);
 
                     var target = lockFile.Targets.FirstOrDefault(t => t.TargetFramework.Equals(targetFrameworkInformation.FrameworkName));
@@ -66,22 +57,18 @@ namespace DotNetOutdated.Services
                         {
                            var projectLibrary = target.Libraries.FirstOrDefault(library => string.Equals(library.Name, projectDependency.Name, StringComparison.OrdinalIgnoreCase));
 
-                            // Determine whether this is a development dependency
                             bool isDevelopmentDependency = false;
-                            var packageIdentity = new PackageIdentity(projectLibrary.Name, projectLibrary.Version);
-                            var packageInfo = LocalFolderUtility.GetPackageV3(packageSpec.RestoreMetadata.PackagesPath, packageIdentity, NullLogger.Instance);
-                            if (packageInfo != null)
-                                isDevelopmentDependency = packageInfo.GetReader().GetDevelopmentDependency();
-
-                            var dependency = new Dependency
+                            if (projectLibrary != null)
                             {
-                                Name = projectDependency.Name,
-                                VersionRange = projectDependency.LibraryRange.VersionRange,
-                                ResolvedVersion = projectLibrary?.Version,
-                                IsAutoReferenced = projectDependency.AutoReferenced,
-                                IsTransitive = false,
-                                IsDevelopmentDependency = isDevelopmentDependency
-                            };
+                                // Determine whether this is a development dependency
+                                var packageIdentity = new PackageIdentity(projectLibrary.Name, projectLibrary.Version);
+                                var packageInfo = LocalFolderUtility.GetPackageV3(packageSpec.RestoreMetadata.PackagesPath, packageIdentity, NullLogger.Instance);
+                                if (packageInfo != null)
+                                    isDevelopmentDependency = packageInfo.GetReader().GetDevelopmentDependency();
+                            }
+
+                            var dependency = new Dependency(projectDependency.Name, projectDependency.LibraryRange.VersionRange, projectLibrary?.Version,
+                                projectDependency.AutoReferenced, false, isDevelopmentDependency);
                             targetFramework.Dependencies.Add(dependency);
 
                             // Process transitive dependencies for the library
@@ -106,13 +93,7 @@ namespace DotNetOutdated.Services
                     // Only add library and process child dependencies if we have not come across this dependency before
                     if (!targetFramework.Dependencies.Any(dependency => dependency.Name == packageDependency.Id))
                     {
-                        var childDependency = new Dependency
-                        {
-                            Name = packageDependency.Id,
-                            VersionRange = packageDependency.VersionRange,
-                            ResolvedVersion = childLibrary?.Version,
-                            IsTransitive = true
-                        };
+                        var childDependency = new Dependency(packageDependency.Id, packageDependency.VersionRange, childLibrary?.Version, false, true, false);
                         targetFramework.Dependencies.Add(childDependency);
 
                         // Process the dependency for this project depency

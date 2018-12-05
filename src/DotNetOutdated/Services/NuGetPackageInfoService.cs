@@ -69,7 +69,7 @@ namespace DotNetOutdated.Services
             }
         }
 
-        public async Task<IReadOnlyList<NuGetVersion>> GetAllVersions(string package, List<Uri> sources, bool includePrerelease, NuGetFramework targetFramework,
+        public async Task<IReadOnlyList<NuGetVersion>> GetAllVersions(string package, IEnumerable<Uri> sources, bool includePrerelease, NuGetFramework targetFramework,
             string projectFilePath, bool isDevelopmentDependency)
         {
             var allVersions = new List<NuGetVersion>();
@@ -89,7 +89,8 @@ namespace DotNetOutdated.Services
                             var reducer = new FrameworkReducer();
 
                             compatibleMetadataList = compatibleMetadataList
-                                .Where(meta => reducer.GetNearest(targetFramework, meta.DependencySets.Select(ds => ds.TargetFramework)) != null)
+                                .Where(meta => meta.DependencySets == null || !meta.DependencySets.Any() ||
+                                               reducer.GetNearest(targetFramework, meta.DependencySets.Select(ds => ds.TargetFramework)) != null)
                                 .ToList();
                         }
 
@@ -102,6 +103,10 @@ namespace DotNetOutdated.Services
                             else if (m is PackageSearchMetadataV2Feed packageSearchMetadataV2Feed)
                             {
                                 allVersions.Add(packageSearchMetadataV2Feed.Version);
+                            }
+                            else if (m is LocalPackageSearchMetadata localPackageSearchMetadata)
+                            {
+                                allVersions.Add(localPackageSearchMetadata.Identity.Version);
                             }
                         };
                     }
